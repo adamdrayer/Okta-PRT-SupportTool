@@ -3529,6 +3529,14 @@ Function DJ++TS{
     Write-Host ''
     Write-Host ''    
 }
+
+Function GetMostRecentDeviceRegAAD {
+    $UserDeviceRegEvents = Get-WinEvent -LogName "Microsoft-Windows-User Device Registration/Admin"
+    $UserDeviceRegEvents_AAD = @{}
+    $UserDeviceRegEvents_AAD = $UserDeviceRegEvents | Where-Object {$_.Id -eq '104'} | Sort-Object TimeCreated -Desc
+    $global:UserDevRegEvent_AAD = $UserDeviceRegEvents_AAD[0]     
+}
+
 $ErrorActionPreference= 'silentlycontinue'
 $global:DomainAuthType=""
 $global:MEXURL=""
@@ -3705,6 +3713,41 @@ if ($global:AzurePrt) {
     Write-Log -Message $msg
 
 }
+
+#Get Current Session Logon Time
+$CurrentSession = quser $env:username
+$CurrentSession = $CurrentSession | % -Process {$_ -replace '\s{2,}',',' }
+$CurrentSession = $CurrentSession | ConvertFrom-Csv
+$CurrentSessionLogonTime = [datetime]$CurrentSession.'LOGON TIME'
+$CurrentSessionLogonTime = $CurrentSessionLogonTime.AddMinutes(-(([TimeZoneInfo]::Local).BaseUtcOffset.TotalMinutes)) #Convert to UTC
+$global:CurrentLogonTime = $CurrentSessionLogonTime
+$msg="Current User Session Logon DateTime was at: " + $global:CurrentLogonTime.tostring()
+Write-Host $msg
+Write-Log -Message $msg
+
+
+GetMostRecentDeviceRegAAD
+if ($global:UserDevRegEvent_AAD) {
+    $msg="Device was Joined to Azure on: " + $global:UserDevRegEvent_AAD.TimeCreated
+    Write-Host $msg
+    Write-Log -Message $msg
+    if ($global:CurrentLogonTime -gt $global.$UserDevRegEvent_AAD.TimeCreated) {
+        $msg="Current Logon Time is more recent than Device Join Time! (Good)"
+        Write-Host $msg -ForegroundColor Green
+        Write-Log -Message $msg
+    } else {
+        $msg="This session was started before the device was joined to Azure! (Bad)"
+        Write-Host $msg -ForegroundColor Red
+        Write-Log -Message $msg
+    }
+} else {
+    $msg="Unable to determine when device was joined to Azure"
+    Write-Host $msg
+    Write-Log -Message $msg
+}
+
+ConnecttoAzureAD
+AADJ
 
 #DETECTED ISSUES
 if (($global:DSRegCmd_AADJ -eq $false) -And ($global:DSRegCmd_WPJ -eq $false)) {
