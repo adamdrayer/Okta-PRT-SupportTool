@@ -3604,7 +3604,7 @@ $global:OSBuild = ([environment]::OSVersion.Version).Build
 $global:OSVer = (([environment]::OSVersion).Version).ToString()
 
 $msg="Windows Version     : " + $global:OSVer
-if (($global:OSVersoin -ge 10) -and ($global:OSBuild -ge 1511)) {
+if (($global:OSVersion -ge 10) -and ($global:OSBuild -ge 1511)) {
     $msg=$msg + " (Supported)"    
     Write-Host $msg 
 } else {
@@ -3661,7 +3661,7 @@ If ($global:IsDomainJoined) {
     if ($global:DomainName -eq $UPNDomain) {
         $msg="Logged in User UPN Domain: " + $UPNDomain + "Matches Device Joined Domain: " + $global:DomainName
     } else {
-    $msg="Logged in User does not belong to the same domain as computer"
+    $msg="Logged in User UPN Domain: " + $UPNDomain + "does not belong to the same domain as computer: " + $global:DomainName
     }
 } else {
     $msg="Skipping check to match logged-in user to computer domain (Computer Not Domain-Joined)"
