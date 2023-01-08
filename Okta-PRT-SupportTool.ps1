@@ -3707,7 +3707,7 @@ if ($global:AzurePrt) {
 }
 
 #DETECTED ISSUES
-if (!($global:DSRegCmd_AADJ) -And !($global:DSRegCmd_WPJ)) {
+if (($global:DSRegCmd_AADJ -eq $false) -And ($global:DSRegCmd_WPJ -eq $false)) {
     $msg = "ISSUE FOUND:  DEVICE NOT JOINED TO AZURE! (Device must be AAD-Joined, Hybrid-Joined, or AAD-Registered)"
     Write-Host $msg -ForegroundColor Red
     Write-Log -Message $msg
