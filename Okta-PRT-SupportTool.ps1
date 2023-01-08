@@ -3659,9 +3659,9 @@ If ($global:UserUPN -match "@") {
 
 If ($global:IsDomainJoined) {
     if ($global:DomainName -eq $UPNDomain) {
-        $msg="Logged in User UPN Domain: " + $UPNDomain + "Matches Device Joined Domain: " + $global:DomainName
+        $msg="Logged in User UPN Domain: " + $UPNDomain + " = Device Joined Domain: " + $global:DomainName
     } else {
-    $msg="Logged in User UPN Domain: " + $UPNDomain + "does not belong to the same domain as computer: " + $global:DomainName
+    $msg="Logged in User UPN Domain: " + $UPNDomain + " does not belong to the same domain as computer: " + $global:DomainName
     }
 } else {
     $msg="Skipping check to match logged-in user to computer domain (Computer Not Domain-Joined)"
@@ -3684,14 +3684,12 @@ if ($statuscode -eq 200) {
 Write-Log -Message $msg
 
 GetDSRegCmdStatus
-
 Write-Host ""
 $msg = "DSRegCmd is reporting that device join type is: " + $global:DSRegCmd_JoinType
 Write-Host $msg
 Write-Log -Message $msg
 
 GetDSRegCmdPRT
-Write-Host ""
 if ($global:AzurePrt) {
     $msg = "DSRegCmd is reporting PRT is Active!"
     Write-Host $msg -ForegroundColor Green
@@ -3706,6 +3704,12 @@ if ($global:AzurePrt) {
     Write-Host $msg -ForegroundColor Red
     Write-Log -Message $msg
 
+}
+
+#DETECTED ISSUES
+if (!($global:DSRegCmd_AADJ) -And !($global:DSRegCmd_WPJ) {
+    $msg = "ISSUE FOUND:  DEVICE NOT JOINED TO AZURE! (Device must be AAD-Joined, Hybrid-Joined, or AAD-Registered)"
+    #Does existing AAD?  What is Status of Device?  What is diagnostic data?
 }
 
 <#
