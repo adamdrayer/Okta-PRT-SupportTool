@@ -3728,7 +3728,7 @@ Write-Log -Message $msg
 
 GetMostRecentDeviceRegAAD
 if ($global:UserDevRegEvent_AAD) {
-    $msg="Device was Joined to Azure on: " + $global:UserDevRegEvent_AAD.TimeCreated
+    $msg="Device was Joined to Azure on: " + $global:UserDevRegEvent_AAD.TimeCreated.AddMinutes(-(([TimeZoneInfo]::Local).BaseUtcOffset.TotalMinutes))
     Write-Host $msg
     Write-Log -Message $msg
     if ($global:CurrentLogonTime -gt $global.$UserDevRegEvent_AAD.TimeCreated) {
