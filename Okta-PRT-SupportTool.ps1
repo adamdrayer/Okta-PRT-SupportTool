@@ -3615,7 +3615,7 @@ if (($global:OSVersion -ge 10) -and ($global:OSBuild -ge 1511)) {
 $OSInfo = Get-WmiObject -Class Win32_OperatingSystem
 $global:OSEdition = $OSInfo.Caption
 $msg="OS Edition          : " + $global:OSEdition
-if (!($global:OSEdition -contains "Home")) { 
+if (!($global:OSEdition -match "Home")) { 
     $msg=$msg + " (Supported)"    
     Write-Host $msg
 } else {
@@ -3651,7 +3651,7 @@ if ($global:IsDomainJoined) {
 Write-Host $msg
 Write-Log -Message $msg
 
-If ($global:UserUPN -contains "@") {
+If ($global:UserUPN -match "@") {
     $UPNDomain = $global:UserUPN.Split("@")[1]
 } else {
     $UPNDomain = ""
