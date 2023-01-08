@@ -1,33 +1,16 @@
 ﻿<#
  
 .SYNOPSIS
-    DSRegTool V3.7 PowerShell script.
+    Okta-PRT-SupportTool v1.0 - Originally modified from DSRegTool V3.7 by Mohammad Zmaili under fair use
 
 .DESCRIPTION
-    Device Registration Troubleshooter Tool is a PowerShell script that troubleshoots device registration common issues.
+    OKta PRT Support Tool is a PowerShell sciprt to used to troubleshoot issues with Hybrid-Joined Windows 10/11 Devices not getting Primary Refresh Tokens when Azure is Federated with Okta.
 
 .AUTHOR:
-    Mohammad Zmaili
+    Adam Drayer
 
 .EXAMPLE
-    .\DSRegTool.ps1
-
-    Enter (1) to troubleshoot Azure AD Register
-
-    Enter (2) to troubleshoot Azure AD Join device
-
-    Enter (3) to troubleshoot Hybrid Azure AD Join
-
-    Enter (4) to verify Service Connection Point (SCP)
-
-    Enter (5) to verify the health status of the device
-
-    Enter (6) to Verify Primary Refresh Token (PRT)
-
-    Enter (7) to collect the logs
-
-    Enter (Q) to Quit
-
+    .\Okta-PRT-SupportTool.ps1
 
 #>
 
@@ -266,7 +249,7 @@ Function Write-Log{
         [string] $Message,
 
         [Parameter(Mandatory=$False)]
-        [string] $logfile = "DSRegTool.log"
+        [string] $logfile = "OktaPRTSupportTool.log"
     )
     if ($Message -eq " "){
         Add-Content $logfile -Value " " -ErrorAction SilentlyContinue
@@ -277,7 +260,8 @@ Function Write-Log{
 }
 
 Function PSasAdmin{
-    $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())    $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
 Function Test-DevRegApp-old{
@@ -491,6 +475,289 @@ Function SyncJoinCheck($Fallback){
         Write-Host ''
         exit
     }
+}
+
+Function GetDSRegCmdStatus {
+    #Check dsregcmd status.
+    $global:DSRegStatus = dsregcmd /status    
+
+    #Check For Domain-Joined
+    $DJ = $global:DSRegStatus | Select-String DomainJoin
+    $DJ = ($DJ.tostring() -split ":")[1].trim()
+    if ($DJ -ne "YES"){
+        $global:DSRegCmd_DJ = $false
+    } else {
+        $global:DSRegCmd_DJ = $true
+    }
+
+    #Check for AAD-Joined
+    $AADJ = $global:DSRegStatus | Select-String AzureAdJoined
+    $AADJ = ($AADJ.tostring() -split ":")[1].trim()
+    if ($AADJ -eq 'YES'){
+        $global:DSRegCmd_AADJ = $true
+    } else {
+        $global:DSRegCmd_AADJ = $false
+    }
+
+    #Check for Workplace-Joined (aka AAD-Registered)
+    $WPJ = $global:DSRegStatus | Select-String WorkplaceJoined | Select-Object -First 1
+    $WPJ = ($WPJ.tostring() -split ":")[1].trim()
+    if ($WPJ -eq 'YES'){
+        $global:DSRegCmd_WPJ = $true
+    } else {
+        $global:DSRegCmd_WPJ = $false
+    }
+
+    #Determine Join Type
+    if ($global:DSRegCmd_DJ) {
+        if ($global:DSRegCmd_AADJ) {
+            $global:DSRegCmd_JoinType = "Hybrid"
+        } else {
+            if ($global:DSRegCmd_WPJ) {
+                $global:DSRegCmd_JoinType = "DJ+WPJ"
+            } else {
+                $global:DSRegCmd_JoinType = "DJ Only"
+            }
+            
+        }    
+    } else {
+        if ($global:DSRegCmd_AADJ) {
+            $global:DSRegCmd_JoinType = "AADJ Only"
+        } else {
+            if ($global:DSRegCmd_WPJ) {
+                $global:DSRegCmd_JoinType = "WPJ Only"
+            } else {
+                $global:DSRegCmd_JoinType = "Nothing"
+            }
+            
+        }    
+        
+    }
+    
+}
+
+Function GetDSRegCmdPRT {
+    $AzurePrt = $global:DSRegStatus | Select-String "AzureAdPrt "
+    $AzurePrt = ($AzurePrt.tostring() -split ":")[1].trim()
+    if ($AzurePrt -eq "YES"){
+        $global:AzurePrt = $true
+        $AzurePrtUpdateTime = $global:DSRegStatus | Select-String AzureAdPrtUpdateTime
+        $AzurePrtUpdateTime_Separator = $AzurePrtUpdateTime.tostring().IndexOf(':') + 1 
+        $AzurePrtUpdateTime = $AzurePrtUpdateTime.tostring().substring($AzurePrtUpdateTime_Separator,$AzurePrtUpdateTime.tostring().length-$AzurePrtUpdateTime_Separator).trim()
+        #$AzurePrtUpdateTime = ($AzurePrtUpdateTime.tostring() -split ":")[1].trim()
+        $AzurePrtUpdateTime = ($AzurePrtUpdateTime.tostring() -split "\.")[0].trim() + "-00:00"
+        $global:AzurePrtUpdateDateTime = [DateTime]$AzurePrtUpdateTime
+    } else {
+        $global:AzurePrt = $false
+    }
+ 
+}
+
+
+Function CheckDSReg{
+    #Check dsregcmd status.
+    $DSReg = dsregcmd /status
+    Write-Host ''
+    Write-Host "Checking DSREGCMD /STATUS for device-joined info..." -ForegroundColor Yellow
+    $DJ = $DSReg | Select-String DomainJoin
+    $DJ = ($DJ.tostring() -split ":")[1].trim()
+    if ($DJ -ne "YES"){
+        #The device reporting not joined to the local domain.
+        $hostname = hostname
+        Write-Host $hostname "- DSRegCmd is reporting that device is NOT joined to the local domain" -ForegroundColor Yellow
+        Write-Log -Message "$hostname - DSRegCmd is reporting that device is NOT joined to the local domain"
+    }else{
+        #The device is reporting joined to the local domain.
+        $IS_DJ = $true
+        $DomainName = $DSReg | Select-String DomainName 
+        $DomainName =($DomainName.tostring() -split ":")[1].trim()
+        $hostname = hostname
+        Write-Host $hostname "- DSRegCmd is reporting that device is joined to the local domain:" $DomainName -ForegroundColor Yellow
+        Write-Log -Message "$hostname - DSRegCmd is reporting that device is joined to the local domain: $DomainName"
+    } 
+
+    if ($DJ -eq 'YES'){
+        #Check if the device is hybrid
+        $AADJ = $DSReg | Select-String AzureAdJoined
+        $AADJ = ($AADJ.tostring() -split ":")[1].trim()
+        if ($AADJ -eq 'YES'){
+            #The device is hybrid
+            $hostname = hostname
+            Write-Host $hostname "- DSRegCmd is reporting that device is Hybrid Azure AD joined" -ForegroundColor Green
+            Write-Log -Message "$hostname - DSRegCmd is reporting that device is Hybrid Azure AD joined"
+            #CheckPRT value
+            Write-Host ''
+            Write-Host "Testing Azure AD PRT..." -ForegroundColor Yellow
+            Write-Log -Message "Testing Azure AD PRT..."
+            $ADPRT = $DSReg | Select-String AzureAdPrt | select-object -First 1
+            $ADPRT = ($ADPRT.tostring() -split ":")[1].Trim()
+            if ($ADPRT -eq 'YES'){
+                #PRT is available
+                Write-Host "Azure AD PRT Exists!" -ForegroundColor Green
+                Write-Log -Message "Azure AD PRT Exists!"
+            }else{
+                #PRT not available
+                Write-Host "Azure AD PRT DOES NOT Exist!" -ForegroundColor Red
+                Write-Log -Message "Azure AD PRT DOES NOT Exist!" -Level ERROR
+                exit
+            }
+        }else{
+            $hostname = hostname
+            Write-Host $hostname "- DSRegCmd is reporting that device is NOT Hybrid Azure AD joined" -ForegroundColor Yellow
+            Write-Log -Message "$hostname - DSRegCmd is reporting that device is NOT Hybrid Azure AD joined"
+            #Check WPJ
+            Write-Host ''
+            $WPJ = $DSReg | Select-String WorkplaceJoined | Select-Object -First 1
+            $WPJ = ($WPJ.tostring() -split ":")[1].trim()
+            if ($WPJ -eq 'YES'){
+                $hostname = hostname
+                Write-Host $hostname "device is Azure AD Registered" -ForegroundColor Green
+                Write-Log -Message "$hostname device is Azure AD Registered"
+                #Device is WPJ, check the registry
+                Write-Host ''
+                Write-Host "Testing Azure AD PRT registry value..." -ForegroundColor Yellow
+                if ((Get-ItemProperty -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\AAD\Storage\https://login.microsoftonline.com -ErrorAction SilentlyContinue).PSPath){
+                    Write-Host "Test passed: Azure AD PRT registry value exists for the looged on user" -ForegroundColor Green
+                    Write-Log -Message "Test passed: Azure AD PRT registry value exists for the looged on user"
+                    Write-Host ''
+                    Write-Host ''
+                    Write-Host "Script completed successfully." -ForegroundColor Green
+                    Write-Log -Message "Script completed successfully."
+                    Write-Host ''
+                    Write-Host ''
+                    }else{
+                    Write-Host "Test failed: Azure AD PRT registry value does not exist for the looged on user" -ForegroundColor Red
+                    Write-Log -Message "Test failed: Azure AD PRT registry value does not exist for the looged on user" -Level ERROR
+                    Write-Host ''
+                    Write-Host "Recommended action: Disconnect the device from Azure AD form 'settings > Accounts > Access work or school' and then connect it again to Azure AD" -ForegroundColor Yellow
+                    Write-Log -Message "Recommended action: Disconnect the device from Azure AD form 'settings > Accounts > Access work or school' and then connect it again to Azure AD"
+                    Write-Host ''
+                    Write-Host ''
+                    Write-Host "Script completed successfully." -ForegroundColor Green
+                    Write-Log -Message "Script completed successfully."
+                    Write-Host ''
+                    Write-Host ''
+                    exit                
+                }
+            }else{
+                $hostname = hostname
+                Write-Host $hostname "device is NOT Azure AD Registered" -ForegroundColor Yellow
+                Write-Log -Message "$hostname device is NOT Azure AD Registered"
+                Write-Host ''
+                Write-Host "Test failed:" $hostname "device is NOT connected to Azure AD, hence PRT does not exist" -ForegroundColor Red
+                Write-Log -Message "Test failed: $hostname device is NOT connected to Azure AD, hence PRT does not exist" -Level ERROR
+                Write-Host ''
+                Write-Host "Recommended action: make sure the device is connected to Azure AD to get Azure AD PRT" -ForegroundColor Yellow
+                Write-Log -Message "Recommended action: make sure the device is connected to Azure AD to get Azure AD PRT"
+                Write-Host ''
+                Write-Host ''
+                Write-Host "Script completed successfully." -ForegroundColor Green
+                Write-Log -Message "Script completed successfully."
+                Write-Host ''
+                Write-Host ''
+                exit        
+            }
+        }
+    }else{
+        #Check if the device AADJ
+        Write-Host ''
+        $AADJ = $DSReg | Select-String AzureAdJoined
+        $AADJ = ($AADJ.tostring() -split ":")[1].trim()
+        if ($AADJ -eq 'YES'){
+            #The device AADJ
+            $hostname = hostname
+            Write-Host $hostname "- DSRegCmd is reporting that device is Azure AD joined" -ForegroundColor Green
+            Write-Log -Message "$hostname - DSRegCmd is reporting that device is Azure AD joined"
+            #CheckPRT value
+            Write-Host ''
+            Write-Host "Testing Azure AD PRT..." -ForegroundColor Yellow
+            Write-Log -Message "Testing Azure AD PRT..."
+            $ADPRT = $DSReg | Select-String AzureAdPrt | select-object -First 1
+            $ADPRT = ($ADPRT.tostring() -split ":")[1].Trim()
+            if ($ADPRT -eq 'YES'){
+                #PRT is available
+                Write-Host "Test passed: Azure AD PRT is available on this device for the looged on user" -ForegroundColor Green
+                Write-Log -Message "Test passed: Azure AD PRT is available on this device for the looged on user" 
+                Write-Host ''
+                Write-Host ''
+                Write-Host "Script completed successfully." -ForegroundColor Green
+                Write-Log -Message "Script completed successfully."
+                Write-Host ''
+                Write-Host ''
+            }else{
+                #PRT not available
+                Write-Host "Test failed: Azure AD PRT is not available. Hence SSO will not work, and the device may be blocked if you have a device-based Conditional Access Policy" -ForegroundColor Red
+                Write-Log -Message "Test failed: Azure AD PRT is not available. Hence SSO will not work, and the device may be blocked if you have a device-based Conditional Access Policy"
+                Write-Host ''
+                Write-Host "Recommended action: lock the device and unlock it and run the script again. If the issue remains, collect the logs and send them to MS support" -ForegroundColor Yellow
+                Write-Log -Message "Recommended action: lock the device and unlock it and run the script again. If the issue remains, collect the logs and send them to MS support"
+                Write-Host ''
+                Write-Host ''
+                Write-Host "Script completed successfully." -ForegroundColor Green
+                Write-Log -Message "Script completed successfully."
+                Write-Host ''
+                Write-Host ''
+                exit
+            }
+        }else{
+            $hostname = hostname
+            Write-Host $hostname "- DSRegCmd is reporting that device is NOT Azure AD joined" -ForegroundColor Yellow
+            Write-Log -Message "$hostname - DSRegCmd is reporting that device is NOT Azure AD joined"
+            #Check WPJ
+            Write-Host ''
+            $WPJ = $DSReg | Select-String WorkplaceJoined
+            $WPJ = ($WPJ.tostring() -split ":")[1].trim()
+            if ($WPJ -eq 'YES'){
+                #Device is WPJ, check the registry
+                $hostname = hostname
+                Write-Host $hostname "- DSRegCmd is reporting that device is Azure AD Registered" -ForegroundColor Green
+                Write-Log -Message "$hostname - DSRegCmd is reporting that device is Azure AD Registered"
+                #check registry
+                Write-Host ''
+                Write-Host "Testing Azure AD PRT registry value..." -ForegroundColor Yellow
+                Write-Log -Message "Testing Azure AD PRT registry value..."
+                if ((Get-ItemProperty -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\AAD\Storage\https://login.microsoftonline.com -ErrorAction SilentlyContinue).PSPath){
+                    Write-Host "Test passed: Azure AD PRT registry value exists for the looged on user" -ForegroundColor Green
+                    Write-Log -Message "Test passed: Azure AD PRT registry value exists for the looged on user"
+                    Write-Host ''
+                    Write-Host ''
+                    Write-Host "Script completed successfully." -ForegroundColor Green
+                    Write-Log -Message "Script completed successfully."
+                    Write-Host ''
+                }else{
+                    Write-Host "Test failed: Azure AD PRT registry value does not exist for the looged on user" -ForegroundColor Red
+                    Write-Log -Message "Test failed: Azure AD PRT registry value does not exist for the looged on user" -Level ERROR
+                    Write-Host ''
+                    Write-Host "Recommended action: Disconnect the device from Azure AD form 'settings > Accounts > Access work or school' and then connect it again to Azure AD" -ForegroundColor Yellow
+                    Write-Log -Message "Recommended action: Disconnect the device from Azure AD form 'settings > Accounts > Access work or school' and then connect it again to Azure AD"
+                    Write-Host ''
+                    Write-Host ''
+                    Write-Host "Script completed successfully." -ForegroundColor Green
+                    Write-Log -Message "Script completed successfully."
+                    Write-Host ''
+                    Write-Host ''
+                    exit                
+                }
+            }else{
+                $hostname = hostname
+                Write-Host $hostname "device is NOT Azure AD Registered" -ForegroundColor Yellow
+                Write-Log -Message "$hostname device is NOT Azure AD Registered"
+                Write-Host "Test failed:" $hostname "device is NOT connected to Azure AD, hence PRT does not exist" -ForegroundColor Red
+                Write-Log -Message "Test failed: $hostname device is NOT connected to Azure AD, hence PRT does not exist"
+                Write-Host ''
+                Write-Host "Recommended action: make sure the device is connected to Azure AD to get Azure PRT" -ForegroundColor Yellow
+                Write-Log -Message "Recommended action: make sure the device is connected to Azure AD to get Azure PRT"
+                Write-Host ''
+                Write-Host ''
+                Write-Host "Script completed successfully." -ForegroundColor Green
+                Write-Log -Message "Script completed successfully."
+                Write-Host ''
+                Write-Host ''
+                exit        
+            }
+        }
+    }
+
 }
 
 Function CheckPRT{
@@ -792,6 +1059,35 @@ Function checkProxy($Write){
     If($Write){Write-Host $winInetAutoConfigURL;Write-Log -Message $winInetAutoConfigURL}
 
     return $global:ProxyServer
+}
+
+Function CheckWindowsVersion{
+    #Check OS version:
+    #Write-Host ''
+    #Write-Host "Testing OS version..." -ForegroundColor Yellow
+    #Write-Log -Message "Testing OS version..."
+    #$global:OSVersoin = ([environment]::OSVersion.Version).major
+    #$global:OSBuild = ([environment]::OSVersion.Version).Build
+    #$global:OSVer = (([environment]::OSVersion).Version).ToString()
+    #if (($global:OSVersoin -ge 10) -and ($global:OSBuild -ge 1511)){
+        #Write-Host "Test passed: device has current OS version ($OSVer)" -ForegroundColor Green
+        #Write-Log -Message "Test passed: device has current OS version ($OSVer)"
+    #}else{
+        # dsregcmd will not work.
+        #Write-Host "The device has a Windows down-level OS version" -ForegroundColor Red
+        #Write-Log -Message "The device has a Windows down-level OS version"
+        #Write-Host ''
+        #Write-Host "Recommended action: Run this test on current OS versions e.g. Windows 10, Server 2016 and above" -ForegroundColor Yellow
+        #Write-Log -Message "Recommended action: Run this test on current OS versions e.g. Windows 10, Server 2016 and above"
+        #Write-Host ''
+        #Write-Host ''
+        #Write-Host "Script completed successfully." -ForegroundColor Green
+        #Write-Log -Message "Script completed successfully."
+        #Write-Host ''
+        #Write-Host ''
+        #exit
+    #}
+
 }
 
 Function WPJTS{
@@ -1318,22 +1614,50 @@ Function getSCP{
 }
 
 Function ExportEventViewerLogs ($EventViewerLogs,$ExportPath){
-    ForEach ($EventViewerLog in $EventViewerLogs){		$EventViewerLogAfter = [regex]::Replace($EventViewerLog,"/","-")        $EventViewerLogAfter=($EventViewerLogAfter -split "Microsoft-Windows-")[1].trim()		$ExportedFileName = $ExportPath +"\"+ $EventViewerLogAfter+".evtx"
-        (New-Object System.Diagnostics.Eventing.Reader.EventLogSession).ExportLogAndMessages($EventViewerLog,'LogName','*',$ExportedFileName)        Write-Log -Message "$EventViewerLogAfter event log exported successfully" -logfile "$global:LogsPath\Log.log"    }
+    ForEach ($EventViewerLog in $EventViewerLogs){
+		$EventViewerLogAfter = [regex]::Replace($EventViewerLog,"/","-")
+        $EventViewerLogAfter=($EventViewerLogAfter -split "Microsoft-Windows-")[1].trim()
+		$ExportedFileName = $ExportPath +"\"+ $EventViewerLogAfter+".evtx"
+        (New-Object System.Diagnostics.Eventing.Reader.EventLogSession).ExportLogAndMessages($EventViewerLog,'LogName','*',$ExportedFileName)
+        Write-Log -Message "$EventViewerLogAfter event log exported successfully" -logfile "$global:LogsPath\Log.log"
+    }
 }
 
-Function EnableDebugEvents ($DbgEvents){    ForEach ($evt in $DbgEvents){        $Log=New-Object System.Diagnostics.Eventing.Reader.EventlogConfiguration $evt        $Log.IsEnabled =$false        $Log.SaveChanges()        $Log.IsEnabled =$true        $Log.SaveChanges()        Write-Log -Message "$evt enabled" -logfile "$global:LogsPath\Log.log"    }}
+Function EnableDebugEvents ($DbgEvents){
+    ForEach ($evt in $DbgEvents){
+        $Log=New-Object System.Diagnostics.Eventing.Reader.EventlogConfiguration $evt
+        $Log.IsEnabled =$false
+        $Log.SaveChanges()
+        $Log.IsEnabled =$true
+        $Log.SaveChanges()
+        Write-Log -Message "$evt enabled" -logfile "$global:LogsPath\Log.log"
+    }
+}
 
-Function DisableDebugEvents ($DbgEvents){    ForEach ($evt in $DbgEvents){	    $Log = New-Object System.Diagnostics.Eventing.Reader.EventlogConfiguration $evt		$Log.IsEnabled = $false		$Log.SaveChanges()        Write-Log -Message "$evt disabled" -logfile "$global:LogsPath\Log.log"    }
+Function DisableDebugEvents ($DbgEvents){
+    ForEach ($evt in $DbgEvents){
+	    $Log = New-Object System.Diagnostics.Eventing.Reader.EventlogConfiguration $evt
+		$Log.IsEnabled = $false
+		$Log.SaveChanges()
+        Write-Log -Message "$evt disabled" -logfile "$global:LogsPath\Log.log"
+    }
 }
 
 Function CollectLogAADExt($RunLogs){
-    Push-Location $global:LogsPath    ForEach ($RunLog in $RunLogs){		cmd.exe /c $RunLog        Write-Log -Message $RunLog -logfile "$global:LogsPath\Log.log"    }
+    Push-Location $global:LogsPath
+    ForEach ($RunLog in $RunLogs){
+		cmd.exe /c $RunLog
+        Write-Log -Message $RunLog -logfile "$global:LogsPath\Log.log"
+    }
     Pop-Location
 }
 
 Function CollectLog($RunLogs){
-    Push-Location $global:LogsPath    ForEach ($RunLog in $RunLogs){		powershell.exe $RunLog        Write-Log -Message $RunLog -logfile "$global:LogsPath\Log.log"    }
+    Push-Location $global:LogsPath
+    ForEach ($RunLog in $RunLogs){
+		powershell.exe $RunLog
+        Write-Log -Message $RunLog -logfile "$global:LogsPath\Log.log"
+    }
     Pop-Location
 }
 
@@ -1376,12 +1700,21 @@ Function CopyFiles{
     StartCopyFile "$env:windir\system32\Lsass.log" "Lsass.log"
 }
 
-Function CompressLogsFolder{    $ErrorActionPreference = "SilentlyContinue"    #$CompressedFile = "DSRegTool_Logs_" + (Get-Date -Format yyyy-MM-dd_HH-mm)    $CompressedFile = "DSRegTool_Logs_" + (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd_HH-mm')    $FolderContent = "$(Join-Path -Path $pwd.Path -ChildPath $CompressedFile).zip"    Add-Type -Assembly "System.IO.Compression.FileSystem"    [System.IO.Compression.ZipFile]::CreateFromDirectory($global:LogsPath, $FolderContent)
+Function CompressLogsFolder{
+    $ErrorActionPreference = "SilentlyContinue"
+    #$CompressedFile = "DSRegTool_Logs_" + (Get-Date -Format yyyy-MM-dd_HH-mm)
+    $CompressedFile = "DSRegTool_Logs_" + (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd_HH-mm')
+    $FolderContent = "$(Join-Path -Path $pwd.Path -ChildPath $CompressedFile).zip"
+    Add-Type -Assembly "System.IO.Compression.FileSystem"
+    [System.IO.Compression.ZipFile]::CreateFromDirectory($global:LogsPath, $FolderContent)
     Write-host "Compressed file is ready in $FolderContent" -ForegroundColor Yellow
     # Cleanup the Temporary Folder (if error retain the temp files)
     if(Test-Path -Path $pwd.Path){
 		Remove-Item -Path $global:LogsPath -Force -Recurse | Out-Null
-    }else{		Write-host "The Archive could not be created. Keeping Temporary Folder $global:LogsPath"		New-Item -ItemType directory -Path $pwd.Path -Force | Out-Null    }
+    }else{
+		Write-host "The Archive could not be created. Keeping Temporary Folder $global:LogsPath"
+		New-Item -ItemType directory -Path $pwd.Path -Force | Out-Null
+    }
 }
 
 Function LogmanStart($Trace,$Providers){
@@ -1436,7 +1769,14 @@ Function StartLogCollection{
     '{d48533a7-98e4-566d-4956-12474e32a680},0xffffffffffffffff,0xff',`
     '{072665fb-8953-5a85-931d-d06aeab3d109},0xffffffffffffffff,0xff',`
     '{EF00584A-2655-462C-BC24-E7DE630E7FBF},0xffffffffffffffff,0xff',`
-    '{c632d944-dddb-599f-a131-baf37bf22ef0},0xffffffffffffffff,0xff',`    '{ACC49822-F0B2-49FF-BFF2-1092384822B6},0xffffffffffffffff,0xff',`    '{5AA2DC10-E0E7-4BB2-A186-D230D79442D7},0xffffffffffffffff,0xff',`    '{7AE961F7-1262-48E2-B237-ACBA331CC970},0xffffffffffffffff,0xff',`    '{519B3601-C289-44FB-B3E4-A05841D2790D},0xffffffffffffffff,0xff',`    '{ACC49822-F0B2-49FF-BFF2-1092384822B6},0xffffffffffffffff,0xff'    $LSA='{D0B639E0-E650-4D1D-8F39-1580ADE72784},0xC43EFF,0xff',`
+    '{c632d944-dddb-599f-a131-baf37bf22ef0},0xffffffffffffffff,0xff',`
+    '{ACC49822-F0B2-49FF-BFF2-1092384822B6},0xffffffffffffffff,0xff',`
+    '{5AA2DC10-E0E7-4BB2-A186-D230D79442D7},0xffffffffffffffff,0xff',`
+    '{7AE961F7-1262-48E2-B237-ACBA331CC970},0xffffffffffffffff,0xff',`
+    '{519B3601-C289-44FB-B3E4-A05841D2790D},0xffffffffffffffff,0xff',`
+    '{ACC49822-F0B2-49FF-BFF2-1092384822B6},0xffffffffffffffff,0xff'
+
+    $LSA='{D0B639E0-E650-4D1D-8F39-1580ADE72784},0xC43EFF,0xff',`
     '{169EC169-5B77-4A3E-9DB6-441799D5CACB},0xffffff,0xff',`
     '{DAA76F6A-2D11-4399-A646-1D62B7380F15},0xffffff,0xff',`
     '{366B218A-A5AA-4096-8131-0BDAFCC90E93},0xfffffff,0xff',`
@@ -1448,16 +1788,22 @@ Function StartLogCollection{
     '{C00D6865-9D89-47F1-8ACB-7777D43AC2B9},0xffffffffffffffff,0xff',`
     '{7C9FCA9A-EBF7-43FA-A10A-9E2BD242EDE6},0xffffffffffffffff,0xff',`
     '{794FE30E-A052-4B53-8E29-C49EF3FC8CBE},0xffffffffffffffff,0xff',`
-    '{ba634d53-0db8-55c4-d406-5c57a9dd0264},0xffffffffffffffff,0xff'    $Ntlm_CredSSP='{5BBB6C18-AA45-49b1-A15F-085F7ED0AA90},0x5ffDf,0xff',`
+    '{ba634d53-0db8-55c4-d406-5c57a9dd0264},0xffffffffffffffff,0xff'
+
+    $Ntlm_CredSSP='{5BBB6C18-AA45-49b1-A15F-085F7ED0AA90},0x5ffDf,0xff',`
     '{AC43300D-5FCC-4800-8E99-1BD3F85F0320},0xffffffffffffffff,0xff',`
     '{6165F3E2-AE38-45D4-9B23-6B4818758BD9},0xffffffff,0xff',`
     '{DAA6CAF5-6678-43f8-A6FE-B40EE096E06E},0xffffffffffffffff,0xff',`
-    '{AC69AE5B-5B21-405F-8266-4424944A43E9},0xffffffff,0xff'    $Kerberos='{97A38277-13C0-4394-A0B2-2A70B465D64F},0xff,0xff',`
+    '{AC69AE5B-5B21-405F-8266-4424944A43E9},0xffffffff,0xff'
+
+    $Kerberos='{97A38277-13C0-4394-A0B2-2A70B465D64F},0xff,0xff',`
     '{FACB33C4-4513-4C38-AD1E-57C1F6828FC0},0xffffffff,0xff',`
     '{8a4fc74e-b158-4fc1-a266-f7670c6aa75d},0xffffffffffffffff,0xff',`
     '{60A7AB7A-BC57-43E9-B78A-A1D516577AE3},0xffffff,0xff',`
     '{98E6CFCB-EE0A-41E0-A57B-622D4E1B30B1},0xffffffffffffffff,0xff',`
-    '{6B510852-3583-4e2d-AFFE-A67F9F223438},0x7ffffff,0xff'    #Create DSRegToolLogs folder.
+    '{6B510852-3583-4e2d-AFFE-A67F9F223438},0x7ffffff,0xff'
+
+    #Create DSRegToolLogs folder.
     Write-Log -Message "Log collection has started"
     Write-Host "Creating DSRegToolLogs folder under $pwd" -ForegroundColor Yellow
     if (!(Test-Path $global:LogsPath)){
@@ -1492,7 +1838,33 @@ Function StartLogCollection{
     Write-Host "Collecting PreTrace logs..." -ForegroundColor Yellow
     Write-Log -Message "Collecting PreTrace logs..." -logfile "$global:LogsPath\Log.log"
     ExportEventViewerLogs $global:PreTraceEvents $global:PreTrace
-    dsregcmd /status | Out-file "$global:PreTrace\dsregcmd-status.txt"    Write-Log -Message "dsregcmd-status.txt created in PreTrace folder" -logfile "$global:LogsPath\Log.log"    RunPScript -PSScript "dsregcmd /status /debug" | Out-file "$global:PreTrace\dsregcmd-debug.txt"    Write-Log -Message "dsregcmd-debug.txt created in PreTrace folder" -logfile "$global:LogsPath\Log.log"    #Press ENTER to start log collection:    Write-Host ''    Write-Host "Please press ENTER to start log collection..." -ForegroundColor Green -NoNewline    Write-Log -Message "Please press ENTER to start log collection..." -logfile "$global:LogsPath\Log.log"    Read-Host    Write-Host "Starting log collection..." -ForegroundColor Yellow    Write-Log -Message "Starting log collection..." -logfile "$global:LogsPath\Log.log"    #Enable debug and network logs:    Write-Host "Enabling debug logs..." -ForegroundColor Yellow    Write-Log -Message "Enabling debug logs..." -logfile "$global:LogsPath\Log.log"    EnableDebugEvents $global:DebugLogs    Write-Host "Starting network traces..." -ForegroundColor Yellow    Write-Log -Message "Starting network traces..." -logfile "$global:LogsPath\Log.log"    LogmanStart "WebAuth" $WebAuth    Write-Log -Message "WebAuth log collection started..." -logfile "$global:LogsPath\Log.log"    LogmanStart "LSA" $LSA    Write-Log -Message "LSA log collection started..." -logfile "$global:LogsPath\Log.log"    LogmanStart "Ntlm_CredSSP" $Ntlm_CredSSP    Write-Log -Message "Ntlm_CredSSP log collection started..." -logfile "$global:LogsPath\Log.log"    LogmanStart "Kerberos" $Kerberos    Write-Log -Message "Kerberos log collection started..." -logfile "$global:LogsPath\Log.log"    $Reg=Get-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\ProductOptions -ErrorAction SilentlyContinue
+    dsregcmd /status | Out-file "$global:PreTrace\dsregcmd-status.txt"
+    Write-Log -Message "dsregcmd-status.txt created in PreTrace folder" -logfile "$global:LogsPath\Log.log"
+    RunPScript -PSScript "dsregcmd /status /debug" | Out-file "$global:PreTrace\dsregcmd-debug.txt"
+    Write-Log -Message "dsregcmd-debug.txt created in PreTrace folder" -logfile "$global:LogsPath\Log.log"
+    #Press ENTER to start log collection:
+    Write-Host ''
+    Write-Host "Please press ENTER to start log collection..." -ForegroundColor Green -NoNewline
+    Write-Log -Message "Please press ENTER to start log collection..." -logfile "$global:LogsPath\Log.log"
+    Read-Host
+
+    Write-Host "Starting log collection..." -ForegroundColor Yellow
+    Write-Log -Message "Starting log collection..." -logfile "$global:LogsPath\Log.log"
+    #Enable debug and network logs:
+    Write-Host "Enabling debug logs..." -ForegroundColor Yellow
+    Write-Log -Message "Enabling debug logs..." -logfile "$global:LogsPath\Log.log"
+    EnableDebugEvents $global:DebugLogs
+    Write-Host "Starting network traces..." -ForegroundColor Yellow
+    Write-Log -Message "Starting network traces..." -logfile "$global:LogsPath\Log.log"
+    LogmanStart "WebAuth" $WebAuth
+    Write-Log -Message "WebAuth log collection started..." -logfile "$global:LogsPath\Log.log"
+    LogmanStart "LSA" $LSA
+    Write-Log -Message "LSA log collection started..." -logfile "$global:LogsPath\Log.log"
+    LogmanStart "Ntlm_CredSSP" $Ntlm_CredSSP
+    Write-Log -Message "Ntlm_CredSSP log collection started..." -logfile "$global:LogsPath\Log.log"
+    LogmanStart "Kerberos" $Kerberos
+    Write-Log -Message "Kerberos log collection started..." -logfile "$global:LogsPath\Log.log"
+    $Reg=Get-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\ProductOptions -ErrorAction SilentlyContinue
     if ($Reg.ProductType -eq "WinNT"){
         netsh trace start InternetClient persistent=yes traceFile=.\DSRegToolLogs\Netmon.etl capture=yes maxsize=1024| Out-Null
         Write-Log -Message "Network trace started..." -logfile "$global:LogsPath\Log.log"
@@ -1500,11 +1872,62 @@ Function StartLogCollection{
         netsh trace start persistent=yes traceFile=.\DSRegToolLogs\Netmon.etl capture=yes maxsize=1024| Out-Null
         Write-Log -Message "Network trace started..." -logfile "$global:LogsPath\Log.log"
     }
-    Write-Host ''    Write-Host ''    Write-Host "Log collection has started, please start repro the issue..." -ForegroundColor Yellow    Write-Log -Message "Log collection has started, please start repro the issue..." -logfile "$global:LogsPath\Log.log"    Write-Host ''}Function StopLogCollection{    Write-Host "When repro finished, please press ENTER to stop log collection..." -ForegroundColor Green -NoNewline    Write-Log -Message "When repro finished, please press ENTER to stop log collection..." -logfile "$global:LogsPath\Log.log"    Read-Host     #Disable debug and analytic logs:    DisableDebugEvents $global:DebugLogs    #Collect logs    Write-Host "Log collection has been stopped, please wait until we gather all files..." -ForegroundColor Yellow    Write-Log -Message "Log collection has been stopped, please wait until we gather all files..." -logfile "$global:LogsPath\Log.log"    Write-Host "Copying files..." -ForegroundColor Yellow    write-log -Message "Copying files..." -logfile "$global:LogsPath\Log.log"    CopyFiles    Write-Host "Exporting registry keys..." -ForegroundColor Yellow    write-log -Message "Exporting registry keys..." -logfile "$global:LogsPath\Log.log"    CollectLog $global:RegKeys    Write-Host "Exporting event viewer logs..." -ForegroundColor Yellow    CollectAdditionalLogs    write-log -Message "Exporting event viewer logs..." -logfile "$global:LogsPath\Log.log"    ExportEventViewerLogs $global:Events $global:LogsPath    RunPScript -PSScript "dsregcmd /status /debug" | Out-file "$global:LogsPath\dsregcmd-debug.txt"    Write-Log -Message "dsregcmd-debug.txt exported" -logfile "$global:LogsPath\Log.log"    getSCP    getwinHTTPinInet    CollectLogAADExt $global:AADExt    CollectLogAADEXMetadata    Write-Host "Stopping network traces, this may take few minutes..." -ForegroundColor Yellow    Write-Log -Message "Stopping network traces, this may take few minutes..." -logfile "$global:LogsPath\Log.log"    LogmanStop "WebAuth"    Write-Log -Message "WebAuth log collection stopped..." -logfile "$global:LogsPath\Log.log"    LogmanStop "LSA"    Write-Log -Message "LSA log collection stopped..." -logfile "$global:LogsPath\Log.log"    LogmanStop "Ntlm_CredSSP"    Write-Log -Message "Ntlm_CredSSP log collection stopped..." -logfile "$global:LogsPath\Log.log"    LogmanStop "Kerberos"    Write-Log -Message "Kerberos log collection stopped..." -logfile "$global:LogsPath\Log.log"    netsh trace stop | Out-Null    Test-DevRegConnectivity $false | Out-file "$global:LogsPath\TestDeviceRegConnectivity-system.txt"    Write-Log -Message "TestDeviceRegConnectivity-system.txt exported" -logfile "$global:LogsPath\Log.log"    Test-DevRegConnectivity-User $false | Out-file "$global:LogsPath\TestDeviceRegConnectivity-user.txt"    Write-Log -Message "TestDeviceRegConnectivity-user.txt exported" -logfile "$global:LogsPath\Log.log"    Write-Log -Message "Log collection completed successfully"    Write-Host "Compressing collected logs..." -ForegroundColor Yellow    if (Test-Path "$pwd\DSRegTool.log"){
+    Write-Host ''
+    Write-Host ''
+    Write-Host "Log collection has started, please start repro the issue..." -ForegroundColor Yellow
+    Write-Log -Message "Log collection has started, please start repro the issue..." -logfile "$global:LogsPath\Log.log"
+    Write-Host ''
+}
+
+Function StopLogCollection{
+    Write-Host "When repro finished, please press ENTER to stop log collection..." -ForegroundColor Green -NoNewline
+    Write-Log -Message "When repro finished, please press ENTER to stop log collection..." -logfile "$global:LogsPath\Log.log"
+    Read-Host 
+    #Disable debug and analytic logs:
+    DisableDebugEvents $global:DebugLogs
+
+    #Collect logs
+    Write-Host "Log collection has been stopped, please wait until we gather all files..." -ForegroundColor Yellow
+    Write-Log -Message "Log collection has been stopped, please wait until we gather all files..." -logfile "$global:LogsPath\Log.log"
+    Write-Host "Copying files..." -ForegroundColor Yellow
+    write-log -Message "Copying files..." -logfile "$global:LogsPath\Log.log"
+    CopyFiles
+    Write-Host "Exporting registry keys..." -ForegroundColor Yellow
+    write-log -Message "Exporting registry keys..." -logfile "$global:LogsPath\Log.log"
+    CollectLog $global:RegKeys
+    Write-Host "Exporting event viewer logs..." -ForegroundColor Yellow
+    CollectAdditionalLogs
+    write-log -Message "Exporting event viewer logs..." -logfile "$global:LogsPath\Log.log"
+    ExportEventViewerLogs $global:Events $global:LogsPath
+    RunPScript -PSScript "dsregcmd /status /debug" | Out-file "$global:LogsPath\dsregcmd-debug.txt"
+    Write-Log -Message "dsregcmd-debug.txt exported" -logfile "$global:LogsPath\Log.log"
+    getSCP
+    getwinHTTPinInet
+    CollectLogAADExt $global:AADExt
+    CollectLogAADEXMetadata
+    Write-Host "Stopping network traces, this may take few minutes..." -ForegroundColor Yellow
+    Write-Log -Message "Stopping network traces, this may take few minutes..." -logfile "$global:LogsPath\Log.log"
+    LogmanStop "WebAuth"
+    Write-Log -Message "WebAuth log collection stopped..." -logfile "$global:LogsPath\Log.log"
+    LogmanStop "LSA"
+    Write-Log -Message "LSA log collection stopped..." -logfile "$global:LogsPath\Log.log"
+    LogmanStop "Ntlm_CredSSP"
+    Write-Log -Message "Ntlm_CredSSP log collection stopped..." -logfile "$global:LogsPath\Log.log"
+    LogmanStop "Kerberos"
+    Write-Log -Message "Kerberos log collection stopped..." -logfile "$global:LogsPath\Log.log"
+    netsh trace stop | Out-Null
+    Test-DevRegConnectivity $false | Out-file "$global:LogsPath\TestDeviceRegConnectivity-system.txt"
+    Write-Log -Message "TestDeviceRegConnectivity-system.txt exported" -logfile "$global:LogsPath\Log.log"
+    Test-DevRegConnectivity-User $false | Out-file "$global:LogsPath\TestDeviceRegConnectivity-user.txt"
+    Write-Log -Message "TestDeviceRegConnectivity-user.txt exported" -logfile "$global:LogsPath\Log.log"
+    Write-Log -Message "Log collection completed successfully"
+    Write-Host "Compressing collected logs..." -ForegroundColor Yellow
+    if (Test-Path "$pwd\DSRegTool.log"){
         Copy-Item "$pwd\DSRegTool.log" -Destination "$global:LogsPath\DSRegTool.log" | Out-Null
         Write-Log -Message "DSRegTool.log has copied" -logfile "$global:LogsPath\Log.log"
     }
-    Write-Log -Message "Log collection completed successfully, compressing collected logs..." -logfile "$global:LogsPath\Log.log"    CompressLogsFolder
+    Write-Log -Message "Log collection completed successfully, compressing collected logs..." -logfile "$global:LogsPath\Log.log"
+    CompressLogsFolder
     Write-Host ''
     Write-Host ''
     Write-Host "Log collection completed successfully" -ForegroundColor Green -NoNewline
@@ -1601,10 +2024,46 @@ Function LogsCollection{
     'regedit /e WPJ-info.txt HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\AAD'
 
     $global:AADExt='set > set.txt',`
-    'sc query  > services-config.txt',`    'md AADExtention',`    'curl https://login.microsoftonline.com/ -D - > .\AADExtention\login.microsoftonline.com.txt 2>&0',`    'curl https://enterpriseregistration.windows.net/ -D - > .\AADExtention\enterpriseregistration.windows.net.txt 2>&0',`    'curl https://device.login.microsoftonline.com/ -D - > .\AADExtention\device.login.microsoftonline.com.txt 2>&0',`    'curl https://pas.windows.net/ -D - > .\AADExtention\pas.windows.net.txt 2>&0',`    'xcopy C:\WindowsAzure\Logs\Plugins\Microsoft.Azure.ActiveDirectory.AADLoginForWindows .\AADExtention\Microsoft.Azure.ActiveDirectory.AADLoginForWindows /E /H /C /I 2>&0 > null'
-    If ((((New-Object System.Diagnostics.Eventing.Reader.EventlogConfiguration "Microsoft-Windows-AAD/Analytic").IsEnabled) -and ((New-Object System.Diagnostics.Eventing.Reader.EventlogConfiguration "Microsoft-Windows-User Device Registration/Debug").IsEnabled))){        write-Host "Debug logs are enabled, it seems you started log collection" -ForegroundColor Yellow        Write-Log -Message "Debug logs are enabled, it seems you started log collection" -logfile "$global:LogsPath\Log.log"        write-Host "Do you want to continue with current log collection? [Y/N]" -ForegroundColor Yellow        Write-Log -Message "Do you want to continue with current log collection? [Y/N]" -logfile "$global:LogsPath\Log.log"        $input=Read-Host "Enter 'Y' to continue, or 'N' to start a new log collection"        While(($input -ne 'y') -AND ($input -ne 'n')){
+    'sc query  > services-config.txt',`
+    'md AADExtention',`
+    'curl https://login.microsoftonline.com/ -D - > .\AADExtention\login.microsoftonline.com.txt 2>&0',`
+    'curl https://enterpriseregistration.windows.net/ -D - > .\AADExtention\enterpriseregistration.windows.net.txt 2>&0',`
+    'curl https://device.login.microsoftonline.com/ -D - > .\AADExtention\device.login.microsoftonline.com.txt 2>&0',`
+    'curl https://pas.windows.net/ -D - > .\AADExtention\pas.windows.net.txt 2>&0',`
+    'xcopy C:\WindowsAzure\Logs\Plugins\Microsoft.Azure.ActiveDirectory.AADLoginForWindows .\AADExtention\Microsoft.Azure.ActiveDirectory.AADLoginForWindows /E /H /C /I 2>&0 > null'
+
+    If ((((New-Object System.Diagnostics.Eventing.Reader.EventlogConfiguration "Microsoft-Windows-AAD/Analytic").IsEnabled) -and ((New-Object System.Diagnostics.Eventing.Reader.EventlogConfiguration "Microsoft-Windows-User Device Registration/Debug").IsEnabled))){
+        write-Host "Debug logs are enabled, it seems you started log collection" -ForegroundColor Yellow
+        Write-Log -Message "Debug logs are enabled, it seems you started log collection" -logfile "$global:LogsPath\Log.log"
+        write-Host "Do you want to continue with current log collection? [Y/N]" -ForegroundColor Yellow
+        Write-Log -Message "Do you want to continue with current log collection? [Y/N]" -logfile "$global:LogsPath\Log.log"
+        $input=Read-Host "Enter 'Y' to continue, or 'N' to start a new log collection"
+        While(($input -ne 'y') -AND ($input -ne 'n')){
             $input = Read-Host -Prompt "Invalid input. Please make a correct selection from the above options, and press Enter" 
-        }        if($input -eq 'y'){            Write-Log -Message "Continue option has selected" -logfile "$global:LogsPath\Log.log"            #Test if DSRegToolLog folder exist            if(Test-Path $global:LogsPath){                #Stop log collection, when repro finished, please press ENTER.                StopLogCollection            }else{                Write-Host ''                Write-Host "Please locate DSRegToolLog folder/path where you start the tool previously, and start the tool again" -ForegroundColor Red                write-log -Message "Please locate DSRegToolLog folder/path where you start the tool previously, and start the tool again" -Level ERROR            }        }elseif($input -eq 'n'){            Write-Log -Message "Start new collection option has selected" -logfile "$global:LogsPath\Log.log"            #Start log collection from bigning            StartLogCollection            StopLogCollection        }    }else{        #Start log collection from bigning        StartLogCollection        StopLogCollection    }
+        }
+        if($input -eq 'y'){
+            Write-Log -Message "Continue option has selected" -logfile "$global:LogsPath\Log.log"
+            #Test if DSRegToolLog folder exist
+            if(Test-Path $global:LogsPath){
+                #Stop log collection, when repro finished, please press ENTER.
+                StopLogCollection
+            }else{
+                Write-Host ''
+                Write-Host "Please locate DSRegToolLog folder/path where you start the tool previously, and start the tool again" -ForegroundColor Red
+                write-log -Message "Please locate DSRegToolLog folder/path where you start the tool previously, and start the tool again" -Level ERROR
+            }
+        }elseif($input -eq 'n'){
+            Write-Log -Message "Start new collection option has selected" -logfile "$global:LogsPath\Log.log"
+            #Start log collection from bigning
+            StartLogCollection
+            StopLogCollection
+        }
+
+    }else{
+        #Start log collection from bigning
+        StartLogCollection
+        StopLogCollection
+    }
 }
 #Eng of Log Collection functions
 
@@ -3083,10 +3542,11 @@ $global:ProxyServer=""
 
 cls
 '==========================================================='
-Write-Host '          Device Registration Troubleshooter Tool          ' -ForegroundColor Green 
+Write-Host '                   Okta PRT Support Tool                   ' -ForegroundColor Green 
 '==========================================================='
 Write-Host ''
-Write-Host "Please provide any feedback, comment or suggestion" -ForegroundColor Yellow
+<#
+Write-Host "Authored by Adam Drayer, adam.drayer@okta.com" -ForegroundColor Yellow
 Write-Host
 Write-Host "Enter (1) to troubleshoot Azure AD Register" -ForegroundColor Green
 Write-Host ''
@@ -3104,35 +3564,154 @@ Write-Host "Enter (7) to collect the logs" -ForegroundColor Green
 Write-Host ''
 Write-Host "Enter (Q) to Quit" -ForegroundColor Green
 Write-Host ''
-Add-Content ".\DSRegTool.log" -Value "==========================================================" -ErrorAction SilentlyContinue
+#>
+Add-Content ".\OktaPRTSupportTool.log" -Value "==========================================================" -ErrorAction SilentlyContinue
 if($Error[0].Exception.Message -ne $null){
     if($Error[0].Exception.Message.Contains('denied')){
         Write-Host "Was not able to create log file." -ForegroundColor Yellow
         Write-Host ''
     }else{
-        Write-Host "DSRegTool log file has been created." -ForegroundColor Yellow
+        Write-Host "OktaPRTSupportTool.log file has been created." -ForegroundColor Yellow
         Write-Host ''
     }
 }else{
-    Write-Host "DSRegTool log file has been created." -ForegroundColor Yellow
+    Write-Host "OktaPRTSupportTool.log file has been created." -ForegroundColor Yellow
     Write-Host ''
 }
-Add-Content ".\DSRegTool.log" -Value "==========================================================" -ErrorAction SilentlyContinue
-Write-Log -Message "DSRegTool 3.7 has started"
-$msg="Device Name : " + (Get-Childitem env:computername).value
+Add-Content ".\OktaPRTSupportTool.log" -Value "==========================================================" -ErrorAction SilentlyContinue
+Write-Log -Message "Okta PRT Support Tool has started"
+
+
+$global:IsRunningAsAdmin = PSasAdmin
+if ($global:IsRunningAsAdmin) {
+    $msg="This script is running in PowerShell as an admin.  Running this script as an admin is NOT recommended!"    
+    Write-Host $msg -ForegroundColor Yellow
+} else {
+    $msg="This script is running in PowerShell as a non-admin user (Good)"
+    Write-Host $msg -ForegroundColor Green
+}
+Write-Log -Message $msg
+Write-Host ""
+Write-Host ""
+
+$global:DeviceName = (Get-Childitem env:computername).value
+$msg="Device Name         : " + $global:DeviceName
+Write-Host $msg
 Write-Log -Message $msg
 
-Add-Type -AssemblyName System.DirectoryServices.AccountManagement            
-$UserPrincipal = [System.DirectoryServices.AccountManagement.UserPrincipal]::Current
-If ($UserPrincipal.ContextType -ne "Machine"){
-    $global:UserUPN=whoami /upn
+$global:OSVersion = ([environment]::OSVersion.Version).major
+$global:OSBuild = ([environment]::OSVersion.Version).Build
+$global:OSVer = (([environment]::OSVersion).Version).ToString()
+
+$msg="Windows Version     : " + $global:OSVer
+if (($global:OSVersoin -ge 10) -and ($global:OSBuild -ge 1511)) {
+    $msg=$msg + " (Supported)"    
+    Write-Host $msg 
+} else {
+    $msg=$msg + " (Not Supported)"    
+    Write-Host $msg -ForegroundColor Red
 }
 
-$msg="User Account: " + (whoami) +", UPN: "+$global:UserUPN
+$OSInfo = Get-WmiObject -Class Win32_OperatingSystem
+$global:OSEdition = $OSInfo.Caption
+$msg="OS Edition          : " + $global:OSEdition
+if (!($global:OSEdition -contains "Home")) { 
+    $msg=$msg + " (Supported)"    
+    Write-Host $msg
+} else {
+    $msg=$msg + " (Not Supported)"    
+    Write-Host $msg
+}
 Write-Log -Message $msg
 
+
+$global:samAccountName=whoami
+$msg="User Account        : " + $global:samAccountName
+Write-Host $msg
+Write-Log -Message $msg
+
+$global:UserUPN=whoami /upn
+$msg="User Principal Name : " + $global:UserUPN
+Write-Host $msg
+Write-Log -Message $msg
+
+$global:IsDomainJoined = (Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain
+$msg="Domain Joined?      : " + $global:IsDomainJoined
+Write-Host $msg
+Write-Log -Message $msg
+Write-Host ""
+
+if ($global:IsDomainJoined) {
+    $global:DomainName = $env:USERDNSDOMAIN
+    $msg="Domain Name     : " + $global:DomainName
+} else {
+    $global:DomainName = ""
+    $msg="Skipping Domain Name Check (Computer Not Member of Domain)"
+}
+Write-Host $msg
+Write-Log -Message $msg
+
+If ($global:UserUPN -contains "@") {
+    $UPNDomain = $global:UserUPN.Split("@")[1]
+} else {
+    $UPNDomain = ""
+}
+
+If ($global:IsDomainJoined) {
+    if ($global:DomainName -eq $UPNDomain) {
+        $msg="Logged in User UPN Domain: " + $UPNDomain + "Matches Device Joined Domain: " + $global:DomainName
+    } else {
+    $msg="Logged in User does not belong to the same domain as computer"
+    }
+} else {
+    $msg="Skipping check to match logged-in user to computer domain (Computer Not Domain-Joined)"
+}
+Write-Host $msg
+Write-Log -Message $msg
+
+Write-Host ""
+
+$statuscode = (Invoke-WebRequest -Uri https://adminwebservice.microsoftonline.com/ProvisioningService.svc -UseBasicParsing).statuscode
+if ($statuscode -eq 200) {
+    $global:InternetConnected = $true
+    $msg="Azure AD Tenant Reachable - Internet OK"
+    Write-Host $msg -ForegroundColor Green 
+} else {
+    $global:InternetConnected = $false
+    $msg="Azure AD Tenant Unreachable! - Please Check Internet Connection and DNS Settings"
+    Write-Host $msg -ForegroundColor Red
+}
+Write-Log -Message $msg
+
+GetDSRegCmdStatus
+
+Write-Host ""
+$msg = "DSRegCmd is reporting that device join type is: " + $global:DSRegCmd_JoinType
+Write-Host $msg
+Write-Log -Message $msg
+
+GetDSRegCmdPRT
+Write-Host ""
+if ($global:AzurePrt) {
+    $msg = "DSRegCmd is reporting PRT is Active!"
+    Write-Host $msg -ForegroundColor Green
+    Write-Log -Message $msg
+
+    $msg = "DSRegCmd is reporting PRT was Issued on: " + $global:AzurePrtUpdateDateTime + " UTC"
+    Write-Host $msg -ForegroundColor Green
+    Write-Log -Message $msg
+    
+} else {
+    $msg = "DSRegCmd is reporting that PRT has not been issued "
+    Write-Host $msg -ForegroundColor Red
+    Write-Log -Message $msg
+
+}
+
+<#
 $Num =Write-Host ''
 $Num = Read-Host -Prompt "Please make a selection, and press Enter" 
+
 
 While(($Num -ne '1') -AND ($Num -ne '2') -AND ($Num -ne '3') -AND ($Num -ne '4') -AND ($Num -ne '5') -AND ($Num -ne '6') -AND ($Num -ne '7') -AND ($Num -ne 'Q')){
 
@@ -3201,6 +3780,7 @@ if($Num -eq '1'){
     Write-Log -Message "Quit option has been chosen"
     Write-Host ''
 }
+#>
 # SIG # Begin signature block
 # MIInmAYJKoZIhvcNAQcCoIIniTCCJ4UCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
