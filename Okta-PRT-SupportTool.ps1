@@ -1191,8 +1191,8 @@ if (($OktaSystemLogPRTEvents.count -gt 0) -or ($OKtaSystemLogPRTEvents -ne $null
         }
     }
 
-    if ($LeastTimeDiffSecs -lt 14400) {
-        LogWrite "PRT Event found with 4 hours.  DateTime: $([DateTime]$ClosestOktaLogEvent.Published) UTC, Outcome: $($ClosestOktaLogEvent.Outcome.Result)" -FGColor Green
+    if ($LeastTimeDiffSecs -lt 40) {
+        LogWrite "PRT Event found with 40 seconds.  DateTime: $([DateTime]$ClosestOktaLogEvent.Published) UTC, Outcome: $($ClosestOktaLogEvent.Outcome.Result)" -FGColor Green
         LogWrite ""
         $OktaSystemLogPRTEvent_Match_WindowsLogin = $ClosestOktaLogEvent
     } else {
