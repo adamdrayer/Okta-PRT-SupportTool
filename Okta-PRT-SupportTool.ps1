@@ -1278,7 +1278,7 @@ if ($AzureUserInfo.AccountEnabled -eq $true) {
 }    
 
 LogWrite "Check #9 - UPN Domain Suffix is a Federated Domain in Azure                       : '$($AzureFederationInfo.domain_name):$($AzureFederationInfo.account_type)'..." -FGColor Yellow -NoNewLine $True
-if (($AzureFederationInfo.account_type -match "Federated") -and ($AzureFederationInfo.domain_name -match $global:DomainName)) {
+if ($AzureFederationInfo.account_type -match "Federated") {
     LogWrite "PASSED!" -FGColor Green
 } else {
     LogWrite "FAILED!" -FGColor Red
