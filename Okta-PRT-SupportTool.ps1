@@ -567,7 +567,7 @@ Function GetAzureUserInfo {
     try {
         $AzureUserInfoJson = Invoke-WebRequest -uri $AzureUserInfoUrl -Headers $headers -UseBasicParsing -Method "GET" -ContentType "application/json"
     } catch {
-        LogWrite "$Error[0]"
+        LogWrite "$_.Exception.Message"
     }
 
     if ($AzureUserInfoJson) {
@@ -597,7 +597,7 @@ Function GetOffice365App_byDomain {
         $OktaO365AppsJson = Invoke-WebRequest -uri $OktaO365AppsUrl -Headers $global:OktaHeaders -UseBasicParsing -Method "GET" -ContentType "application/json"
         $OktaO365Apps = $OktaO365AppsJson.Content | ConvertFrom-Json
     } catch {
-        LogWrite "$Error[0]"
+        LogWrite "$_.Exception.Message"
     }
 
     #Get Office 365 App for User
@@ -636,7 +636,7 @@ Function GetOffice365App_byDomain {
             $OktaO365AppsJson = Invoke-WebRequest -uri $OktaO365AppsUrl -Headers $global:$OktaHeaders -UseBasicParsing -Method "GET" -ContentType "application/json"
             $OktaO365Apps = $OktaO365AppsJson.Content | ConvertFrom-Json
         } catch {
-            LogWrite "$Error[0]"
+            LogWrite "$_.Exception.Message"
             $OktaOffice365InstanceId = $Null
         }
         LogWrite ""
@@ -652,7 +652,7 @@ Function GetOffice365App_byDomain {
             $OktaO365AppsJson = Invoke-WebRequest -uri $OktaO365AppsUrl -Headers $global:OktaHeaders -UseBasicParsing -Method "GET" -ContentType "application/json"
             $OktaO365App = $OktaO365AppsJson.Content | ConvertFrom-Json
         } catch {
-            LogWrite "$Error[0]"
+            LogWrite "$_.Exception.Message"
             $OktaOffice365InstanceId = $Null
             $OktaO365App = $null
         }
@@ -675,7 +675,7 @@ Function GetO365AppUser_byUPN {
             $OktaO365AppUsersJson = Invoke-WebRequest -uri $OktaO365AppUsersAPIUrl -Headers $global:OktaHeaders -UseBasicParsing -Method "GET" -ContentType "application/json"
             $OktaO365AppUsers += ($OktaO365AppUsersJson.Content | ConvertFrom-Json)
         } catch {
-            LogWrite "$Error[0]"
+            LogWrite "$_.Exception.Message"
         }
         $nextPage = $OktaO365AppUsersJson.relationlink.next
         $OktaO365AppUsersAPIUrl = $nextPage
@@ -705,7 +705,7 @@ Function GetO365AppUser_samAccountName {
             $OktaO365AppUsersJson = Invoke-WebRequest -uri $OktaO365AppUsersAPIUrl -Headers $global:OktaHeaders -UseBasicParsing -Method "GET" -ContentType "application/json"
             $OktaO365AppUsers += ($OktaO365AppUsersJson.Content | ConvertFrom-Json)
         } catch {
-            LogWrite "$Error[0]"
+            LogWrite "$_.Exception.Message"
         }
         $nextPage = $OktaO365AppUsersJson.relationlink.next
         $OktaO365AppUsersAPIUrl = $nextPage
@@ -733,7 +733,7 @@ Function GetOktaUser_ByUPN {
         $OktaUserJson = Invoke-WebRequest -uri $OktaUsersUrl -Headers $global:OktaHeaders -UseBasicParsing -Method "GET" -ContentType "application/json"
         $OktaUser = ($OktaUserJson.Content | ConvertFrom-Json)
     } catch {
-        LogWrite "$Error[0]"
+        LogWrite "$_.Exception.Message"
         $OktaUser = $null
     }
     Return $OktaUser
@@ -749,7 +749,7 @@ Function GetOktaUserO365App_ByOktaUserId {
         $OktaUserJson = Invoke-WebRequest -uri $OktaUsersUrl -Headers $global:OktaHeaders -UseBasicParsing -Method "GET" -ContentType "application/json"
         $OktaUser = ($OktaUserJson.Content | ConvertFrom-Json)
     } catch {
-        LogWrite "$Error[0]"
+        LogWrite "$_.Exception.Message"
         $OktaUser = $null
     }
     Return $OktaUser
@@ -774,7 +774,7 @@ Function GetOktaSystemLogPRTEvents {
         $OktaLogsJson = Invoke-WebRequest -uri $OktaLogsUrl -Headers $global:OktaHeaders -UseBasicParsing -Method "GET" -ContentType "application/json"
         $OktaLogEvents = ($OktaLogsJson.Content | ConvertFrom-Json)
     } catch {
-        LogWrite "$Error[0]"
+        LogWrite "$_.Exception.Message"
         $OktaLogEvents = $null
     }
     Return $OktaLogEvents
