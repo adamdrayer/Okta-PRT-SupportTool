@@ -1366,8 +1366,12 @@ Logwrite ""
 LogWrite "Analyizing Results...." -FGColor Yellow
 LogWrite "===============================================" 
 LogWrite ""
-$ResultsMsg | Foreach {
-    LogWrite $_ -FGColor Red
+if ($ResultsMsg.count -gt 0) {
+    $ResultsMsg | Foreach {
+        LogWrite $_ -FGColor Red
+    }    
+} else {
+LogWrite "All Checks Passed!" - FGColor Green
 }
 Logwrite ""
 
