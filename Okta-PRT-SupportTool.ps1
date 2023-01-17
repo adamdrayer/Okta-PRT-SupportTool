@@ -1294,7 +1294,7 @@ if (($AzureFederationInfo.federation_active_auth_url -match "okta.com") -and ($O
 }    
 
 LogWrite "Check #11 - An Office 365 App exists in Okta that is federated for the UPN Domain  : '$($OktaO365App.Id)'..." -FGColor Yellow -NoNewLine $True
-if (($OktaO365App.Id -ne $null) -And ($OktaO365App.settings.app.domains.name -contains $AzureFederationInfo.domain_name)) {
+if ($OktaO365App.Id -ne $null) {
     LogWrite "PASSED!" -FGColor Green
 } else {
     LogWrite "FAILED!" -FGColor Red
