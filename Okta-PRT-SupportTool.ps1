@@ -605,19 +605,23 @@ Function GetOffice365App_byDomain {
 
     if ($OktaO365Apps.count -gt 0) {
         #Check for Active
-        $OktaO365Apps_Active = $OktaO365Apps | Where-Object {$_.status -match "ACTIVE"}
-        $OktaO365Apps_Active.settings.app.domains | Foreach {
-            if (($_.name -match $Domain) -And ($OktaOffice365InstanceId -eq $null)) {
-                $OktaOffice365InstanceId = $_.InstanceId
+        $OktaO365Apps_Active = $OktaO365Apps | Where-Object {$_.status -eq "ACTIVE"}
+        $OktaO365Apps_Active | Foreach {
+            if (($_.settings.app.domain -match $Domain) -And ($OktaOffice365InstanceId -eq $null)) {
+                $OktaOffice365InstanceId = $_.Id
+            } elseif (($_.settings.app.domains.name -match $Domain) -And ($OktaOffice365InstanceId -eq $null)) {
+                    $OktaOffice365InstanceId = $_.Id
             }
         }
+    
         if ($OktaOffice365InstanceId -eq $null) {
             #No Active app, Check All Apps
             LogWrite "No Active Office365 App Found for domain: $Domain" -FGColor Red
-            $OktaO365Apps = $OktaO365Apps | Where-Object {$_.status -match "ACTIVE"}
-            $OktaO365Apps.settings.app.domains | Foreach {
-                if (($_.name -match $Domain) -And ($OktaOffice365InstanceId -eq $null)) {
-                    $OktaOffice365InstanceId = $_.InstanceId
+            $OktaO365Apps | Foreach {
+                if (($_.settings.app.domain -match $Domain) -And ($OktaOffice365InstanceId -eq $null)) {
+                    $OktaOffice365InstanceId = $_.Id
+                } elseif (($_.settings.app.domains.name -match $Domain) -And ($OktaOffice365InstanceId -eq $null)) {
+                        $OktaOffice365InstanceId = $_.Id
                 }
             }
         }    
@@ -625,26 +629,6 @@ Function GetOffice365App_byDomain {
         LogWrite "NO OFFICE 365 APPS FOUND!" -FGColor Red
         LogWrite ""
     }
-
-<#    If ($OktaOffice365InstanceId -eq $null) {
-        LogWrite "Unable to determine Okta Office 365 Instance Id" -FGColor Red
-        $UserInputOffice365Id = Read-Host -Prompt "Please enter the Instance Id of the Office 365 App for this user (i.e., exk2q6pxxxxxxlRDs697): "
-        $OktaOffice365InstanceId = $UserInputOffice365Id
-
-        $OktaO365AppsUrl = "$OktaTenantUrl/api/v1/apps/$OktaOffice365InstanceId"
-        try {
-            $OktaO365AppsJson = Invoke-WebRequest -uri $OktaO365AppsUrl -Headers $global:$OktaHeaders -UseBasicParsing -Method "GET" -ContentType "application/json"
-            $OktaO365Apps = $OktaO365AppsJson.Content | ConvertFrom-Json
-        } catch {
-            LogWrite "$_.Exception.Message"
-            $OktaOffice365InstanceId = $Null
-        }
-        LogWrite ""
-    } else {
-        LogWrite "Office 365 Instance Found in Okta!  InstanceId is: $OktaOffice365InstanceId" -FGColor Green
-        LogWrite ""
-    }
-#>
 
     If ($OktaOffice365InstanceId -ne $null) {
         $OktaO365AppsUrl = "$global:OktaTenantUrl/api/v1/apps/$OktaOffice365InstanceId"
@@ -659,7 +643,7 @@ Function GetOffice365App_byDomain {
     } else {
         $OktaO365App = $null
     }
-
+#>
     return $OktaO365App
 }
 
