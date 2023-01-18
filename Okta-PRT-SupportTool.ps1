@@ -661,8 +661,16 @@ Function GetO365AppUser_byUPN {
         } catch {
             LogWrite "$_.Exception.Message"
         }
-        $nextPage = $OktaO365AppUsersJson.relationlink.next
-        $OktaO365AppUsersAPIUrl = $nextPage
+        $OktaO365AppUsersJsonHeaderLinks = $OktaO365AppUsersJson.headers.link.split(",")
+        $nextpage = $null
+        Foreach ($link in $OktaO365AppUsersJsonHeaderLinks) {
+            If ($link.split(";")[1] -match "next") {
+                $nextpage = (($link.split(";")[0]).trimstart("<")).trimend(">")
+            }
+        }
+        if ($nextpage -ne $null) {
+            $OktaO365AppUsersAPIUrl = $nextPage
+        }
     } Until ($nextPage.length -eq 0)
     
     If ($OktaO365AppUsers.count -gt 0) {
@@ -691,13 +699,21 @@ Function GetO365AppUser_samAccountName {
         } catch {
             LogWrite "$_.Exception.Message"
         }
-        $nextPage = $OktaO365AppUsersJson.relationlink.next
-        $OktaO365AppUsersAPIUrl = $nextPage
+        $OktaO365AppUsersJsonHeaderLinks = $OktaO365AppUsersJson.headers.link.split(",")
+        $nextpage = $null
+        Foreach ($link in $OktaO365AppUsersJsonHeaderLinks) {
+            If ($link.split(";")[1] -match "next") {
+                $nextpage = (($link.split(";")[0]).trimstart("<")).trimend(">")
+            }
+        }
+        if ($nextpage -ne $null) {
+            $OktaO365AppUsersAPIUrl = $nextPage
+        }
     } Until ($nextPage.length -eq 0)
     
     If ($OktaO365AppUsers.count -gt 0) {
         $OktaO365AppUsers | Foreach {
-            if (($_.credentials.userName -match $global:samAccountName) -And ($OktaO365AppUserId -eq $null)) {
+            if (($_.credentials.userName -match $samAccountName) -And ($OktaO365AppUserId -eq $null)) {
                 $OktaO365AppUser = $_
             }
         }    
