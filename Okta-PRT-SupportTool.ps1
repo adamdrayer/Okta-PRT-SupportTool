@@ -1229,7 +1229,7 @@ LogWrite ""
 
 $ResultsMsg = @()
 
-LogWrite "Check #1 - Device Join Type is Azure-Joined or Hybrid-Joined                       : '$DSRegCmd_JoinType'..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #1 - Join Type (Device-Reported)                     : '$DSRegCmd_JoinType'..." -FGColor Yellow -NoNewLine $True
 if (($DSRegCmd_JoinType -match "Hybrid") -or ($DSRegCmd_JoinType -match "AzureAD-Joined")) {
     LogWrite "PASSED!" -FGColor Green
 } else {
@@ -1237,7 +1237,7 @@ if (($DSRegCmd_JoinType -match "Hybrid") -or ($DSRegCmd_JoinType -match "AzureAD
     $ResultsMsg += "(#1) Device must be hybrid-joined or azuread-joined. Value: '$DSRegCmd_JoinType'"
 }    
 
-LogWrite "Check #2 - UPN Retrieved from Domain (Hybrid) or device                            : '$global:UserUpn'..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #2 - UPN Retrieved from Domain (Hybrid) or device    : '$global:UserUpn'..." -FGColor Yellow -NoNewLine $True
 if (($global:UserUpn -match "@") -and ($global:UserUpn -match ".")) {
     LogWrite "PASSED!" -FGColor Green
 } else {
@@ -1245,7 +1245,7 @@ if (($global:UserUpn -match "@") -and ($global:UserUpn -match ".")) {
     $ResultsMsg += "(#2) Unable to retrieve email-formatted UPN from Domain (or device). Value: '$global:UserUpn'"
 }    
 
-LogWrite "Check #3 - Check Azure AD Tenant Settings, Tenant ID                               : '$DSRegCmd_TenantID'..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #3 - Check Azure AD Tenant Settings                  : '$DSRegCmd_TenantID'..." -FGColor Yellow -NoNewLine $True
 if ($DSRegCmd_TenantID -ne $null) {
     LogWrite "PASSED!" -FGColor Green
 } else {
@@ -1253,7 +1253,7 @@ if ($DSRegCmd_TenantID -ne $null) {
     $ResultsMsg += "(#3) Azure Tenant Settings are missing. Value: '$DSRegCmd_TenantID'"
 }    
 
-LogWrite "Check #4 - Device Exists in Azure,  Device Id                                      : '$($AAD_Device.DeviceId)'..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #4 - Device Exists in Azure,  Device Id              : '$($AAD_Device.DeviceId)'..." -FGColor Yellow -NoNewLine $True
 if (($AAD_Device -ne $null) -and ($AAD_Device.DeviceId -ne $null)) {
     LogWrite "PASSED!" -FGColor Green
 } else {
@@ -1261,7 +1261,7 @@ if (($AAD_Device -ne $null) -and ($AAD_Device.DeviceId -ne $null)) {
     $ResultsMsg += "(#4) Unable to confirm existance of Device Id in Azure Tenant. Value: '$DSRegCmd_DeviceId'"
 }    
 
-LogWrite "Check #5 - Azure Device Join Type is Azure-Joined or Hybrid-Joined                 : '$($AAD_Device.Trusttype)'..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #5 - Join Type (per Azure)                           : '$($AAD_Device.Trusttype)'..." -FGColor Yellow -NoNewLine $True
 if (($AAD_Device.trusttype -match "ServerAd") -or ($AAD_Device.trusttype -match "AzureAd")) {
     LogWrite "PASSED!" -FGColor Green
 } else {
@@ -1269,7 +1269,7 @@ if (($AAD_Device.trusttype -match "ServerAd") -or ($AAD_Device.trusttype -match 
     $ResultsMsg += "(#5) Azure Join Type is Incorrect.  Must be Hybrid or AzureAD-Joined. Value: '$($AAD_Device.Trusttype)'"
 }    
 
-LogWrite "Check #6 - AzureAD-Join/Hybrid Timestamp is before current Windows Login Timestamp : '$AADDeviceJoinTime' UTC..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #6 - Join Timestamp is older than current session    : '$AADDeviceJoinTime' UTC..." -FGColor Yellow -NoNewLine $True
 if (($AADDeviceJoinTime -ne $null) -and ($AADDeviceJoinTime -lt $global:CurrentLogonTime)) {
     LogWrite "PASSED!" -FGColor Green
 } else {
@@ -1277,7 +1277,7 @@ if (($AADDeviceJoinTime -ne $null) -and ($AADDeviceJoinTime -lt $global:CurrentL
     $ResultsMsg += "(#6) AzureAD-Join/Hybrid Timestamp was at or after current Windows Login Timestamp. Value: '$global:AAD_Device.Id'"
 }    
 
-LogWrite "Check #7 - UserPrincipalName from Device exists in Azure as user                   : '$($AzureUserInfo.UserPrincipalName)'..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #7 - UPN from Device exists in Azure as user         : '$($AzureUserInfo.UserPrincipalName)'..." -FGColor Yellow -NoNewLine $True
 if (($AzureUserInfo.UserPrincipalName -ne $null) -and ($AzureUserInfo.UserPrincipalName -eq $global:UserUPN)) {
     LogWrite "PASSED!" -FGColor Green
 } else {
@@ -1285,7 +1285,7 @@ if (($AzureUserInfo.UserPrincipalName -ne $null) -and ($AzureUserInfo.UserPrinci
     $ResultsMsg += "(#7) Unable to confirm existance of User in Azure Tenant by UPN or name does not match local UPN. Value: '$($AzureUserInfo.UserPrincipalName)'"
 }    
 
-LogWrite "Check #8 - User is Active in Azure (Login not blocked or disabled)                 : '$($AzureUserInfo.AccountEnabled)'..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #8 - User is Active in Azure                         : '$($AzureUserInfo.AccountEnabled)'..." -FGColor Yellow -NoNewLine $True
 if ($AzureUserInfo.AccountEnabled -eq $true) {
     LogWrite "PASSED!" -FGColor Green
 } else {
@@ -1293,7 +1293,7 @@ if ($AzureUserInfo.AccountEnabled -eq $true) {
     $ResultsMsg += "(#8) User must have AccountEnabled set to True in Azure. Value: '$($AzureUserInfo.AccountEnabled)'"
 }    
 
-LogWrite "Check #9 - UPN Domain Suffix is a Federated Domain in Azure                       : '$($AzureFederationInfo.domain_name):$($AzureFederationInfo.account_type)'..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #9 - UPN Domain Suffix is Federated                  : '$($AzureFederationInfo.domain_name):$($AzureFederationInfo.account_type)'..." -FGColor Yellow -NoNewLine $True
 if ($AzureFederationInfo.account_type -match "Federated") {
     LogWrite "PASSED!" -FGColor Green
 } else {
@@ -1301,7 +1301,7 @@ if ($AzureFederationInfo.account_type -match "Federated") {
     $ResultsMsg += "(#9) Domain Must be federated in Azure to use Okta as an Identity Provider. Value: '$($AzureFederationInfo.domain_name):$($AzureFederationInfo.account_type)'"
 }    
 
-LogWrite "Check #10 - Okta is the Azure Federation Partner for the UPN Domain Suffix         : '$($AzureFederationInfo.federation_active_auth_url)'..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #10 - Okta is the Azure Federation Partner           : '$($AzureFederationInfo.federation_active_auth_url)'..." -FGColor Yellow -NoNewLine $True
 if (($AzureFederationInfo.federation_active_auth_url -match "okta.com") -and ($OktaActiveAuthUrl -match "okta.com")) {
     LogWrite "PASSED!" -FGColor Green
 } else {
@@ -1309,7 +1309,7 @@ if (($AzureFederationInfo.federation_active_auth_url -match "okta.com") -and ($O
     $ResultsMsg += "(#10) Okta should be the federation partner since this tool is meant to troubleshoot Okta Federation issues with Azure. Value: '$($AzureFederationInfo.federation_active_auth_url)'"
 }    
 
-LogWrite "Check #11 - An Office 365 App exists in Okta that is federated for the UPN Domain  : '$($OktaO365App.Id)'..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #11 - An Okta Office 365 App is federated for Domain  : '$($OktaO365App.Id)'..." -FGColor Yellow -NoNewLine $True
 if ($OktaO365App.Id -ne $null) {
     LogWrite "PASSED!" -FGColor Green
 } else {
@@ -1317,7 +1317,7 @@ if ($OktaO365App.Id -ne $null) {
     $ResultsMsg += "(#11) Unable to locate an Office 365 App in Okta that is federated with Azure for the Domain in the UPN. Value: '$($AzureFederationInfo.domain_name)'"
 }    
 
-LogWrite "Check #12 - The discovered Office 365 App has an ACTIVE status                     : '$($OktaO365App.Status)'..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #12 - The Office 365 App has an ACTIVE status        : '$($OktaO365App.Status)'..." -FGColor Yellow -NoNewLine $True
 if ($OktaO365App.Status -match "ACTIVE") {
     LogWrite "PASSED!" -FGColor Green
 } else {
@@ -1325,7 +1325,7 @@ if ($OktaO365App.Status -match "ACTIVE") {
     $ResultsMsg += "(#12) The Okta Office 365 App must be active and working properly. Value: '$($OktaO365App.Status)'"
 }    
 
-LogWrite "Check #13 - UPN was successfully found in lookup against Office 365 App Usernames  : '$($OktaO365AppUser.credentials.username)'..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #13 - UPN found against O365 App Usernames           : '$($OktaO365AppUser.credentials.username)'..." -FGColor Yellow -NoNewLine $True
 if ($OktaO365AppUser.credentials.username -eq $AzureUserInfo.UserPrincipalName) {
     LogWrite "PASSED!" -FGColor Green
 } elseif ($OktaO365AppUser.credentials.username -eq $global:samAccountName) {
@@ -1339,7 +1339,7 @@ if ($OktaO365AppUser.credentials.username -eq $AzureUserInfo.UserPrincipalName) 
     $ResultsMsg += "(#13) No assigned user for the Office 365 App has an app username that matches the UPN. Value: '$($OktaO365AppUser.credentials.username)'"
 }    
 
-LogWrite "Check #14 - User has ImmutableId value in Azure                                     : '$($AzureUserInfo.onPremisesImmutableId)'..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #14 - User has ImmutableId value in Azure            : '$($AzureUserInfo.onPremisesImmutableId)'..." -FGColor Yellow -NoNewLine $True
 if ($AzureUserInfo.onPremisesImmutableId -ne $null) {
     LogWrite "PASSED!" -FGColor Green
 } else {
@@ -1347,7 +1347,7 @@ if ($AzureUserInfo.onPremisesImmutableId -ne $null) {
     $ResultsMsg += "(#14) User must have an ImmutableId in Azure, this means they are synced from AD, or the value was pushed from Okta. Value: '$global:AAD_Device.Id'"
 }    
 
-LogWrite "Check #15 - User's ImmutableId in App User Profile matches Azure user profile      : '$($OktaO365AppUser.profile.immutableId)'..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #15 - ImmutableId in App matches Azure user profile  : '$($OktaO365AppUser.profile.immutableId)'..." -FGColor Yellow -NoNewLine $True
 if ($OktaO365AppUser.profile.immutableId -eq $AzureUserInfo.onPremisesImmutableId) {
     LogWrite "PASSED!" -FGColor Green
 } else {
@@ -1355,7 +1355,7 @@ if ($OktaO365AppUser.profile.immutableId -eq $AzureUserInfo.onPremisesImmutableI
     $ResultsMsg += "(#15) The ImmutableId in the Okta user's Office 365 app profile must match the value in Azure. Value: '$($OktaO365AppUser.profile.immutableId)'"
 }    
 
-LogWrite "Check #16 - An authentication policy was triggered during most recent Win login    : '$($OktaSystemLogPRTEvent_Match_WindowsLogin.Published)' UTC..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #16 - An Okta policy was triggered during this login : '$($OktaSystemLogPRTEvent_Match_WindowsLogin.Published)' UTC..." -FGColor Yellow -NoNewLine $True
 if ($OktaSystemLogPRTEvent_Match_WindowsLogin -ne $null) {
     LogWrite "PASSED!" -FGColor Green
 } else {
@@ -1363,7 +1363,7 @@ if ($OktaSystemLogPRTEvent_Match_WindowsLogin -ne $null) {
     $ResultsMsg += "(#16) A System Log entry was not found in Okta matching this logon attempt.  If any of the checks 1-14 failed, this is expected.  This also is true if Windows Hello for Business was used to login."
 }    
 
-LogWrite "Check #17 - Authentication Policy allowed basic auth for Windows Login event       : '$($OktaSystemLogPRTEvent_Match_WindowsLogin.Outcome.Result)'..." -FGColor Yellow -NoNewLine $True
+LogWrite "Check #17 - Okta Policy allowed basic auth for Win Login   : '$($OktaSystemLogPRTEvent_Match_WindowsLogin.Outcome.Result)'..." -FGColor Yellow -NoNewLine $True
 if (($OktaSystemLogPRTEvent_Match_WindowsLogin -ne $null) -And ($OktaSystemLogPRTEvent_Match_WindowsLogin.Outcome.Result -match "ALLOW")) {
     LogWrite "PASSED!" -FGColor Green
 } elseif (($OktaSystemLogPRTEvent_Match_WindowsLogin -ne $null) -And ($OktaSystemLogPRTEvent_Match_WindowsLogin.Outcome.Result -notmatch "ALLOW")) {
